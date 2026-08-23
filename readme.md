@@ -28,6 +28,11 @@ This is a **multi-platform video/image parsing plugin** developed for the Koishi
 | `showWaitingTip` | boolean | true | 解析时是否显示等待提示 |
 | `debug` | boolean | false | 是否开启 Debug 模式，在控制台输出详细日志 |
 
+### 平台独立开关设置
+| 配置项 | 类型 | 默认值 | 说明 |
+|--------|------|--------|------|
+| `platformEnable` | object | 各平台均为 `true` | 各平台独立解析开关：关闭后将忽略对应平台的链接（不触发等待提示与解析）。支持的键：`bilibili`（哔哩哔哩）、`douyin`（抖音）、`kuaishou`（快手）、`xiaohongshu`（小红书）、`weibo`（微博）、`xigua`（西瓜视频）、`toutiao`（今日头条）、`youtube`（YouTube）、`tiktok`（TikTok）、`acfun`（AcFun）、`zhihu`（知乎）、`weishi`（微视）、`huya`（虎牙）、`haokan`（好看视频）、`meipai`（美拍）、`twitter`（Twitter/X）、`instagram`（Instagram）、`doubao`（豆包）、`pipigx`（皮皮搞笑）、`pipixia`（皮皮虾）、`zuiyou`（最右）、`jimeng`（即梦/剪映） |
+
 ### 统一消息格式
 | 配置项 | 类型 | 默认值 | 说明 |
 |--------|------|--------|------|
@@ -37,6 +42,7 @@ This is a **multi-platform video/image parsing plugin** developed for the Koishi
 | 配置项 | 类型 | 默认值 | 说明 |
 |--------|------|--------|------|
 | `showImageText` | boolean | true | 是否发送解析后的文字内容 |
+| `showCover` | boolean | true | 是否发送视频封面图 |
 | `showVideoFile` | boolean | true | 是否发送视频文件（关闭则只发送视频链接） |
 | `maxDescLength` | number | 200 | 简介内容最大长度（字符），超出自动截断 |
 | `videoDownloadTimeout` | number | 120000 | 视频下载超时（毫秒） |
@@ -56,8 +62,24 @@ This is a **multi-platform video/image parsing plugin** developed for the Koishi
 |--------|------|--------|------|
 | `primaryApiUrl` | string | `https://api.bugpk.com/api/short_videos` | 主 API 地址，解析时优先使用 |
 | `backupApiUrl` | string | `https://api.bugpk.com/api/svparse` | 备用主 API 地址，仅支持抖音、小红书、Instagram、即梦平台解析 |
+| `isteroToken` | string | 空 | 全局起零数据 (Istero) API Token。若自定义平台未单独设置 Token 则自动复用 |
+| `isteroAppSecret` | string | 空 | 全局起零数据开发者密钥 AppSecret。用于 SHA256 动态签名防护 |
+| `isteroSignEnabled` | boolean | false | 全局起零数据是否默认开启动态签名防护 |
 | `platformDedicatedFirst` | object | 各平台均为 `false` | 各平台独立开关：是否优先使用平台专属 API。对象键为平台标识（英文），值为布尔值。支持的键：`bilibili`（哔哩哔哩）、`douyin`（抖音）、`kuaishou`（快手）、`xiaohongshu`（小红书）、`weibo`（微博）、`xigua`（西瓜视频）、`youtube`（YouTube）、`tiktok`（TikTok）、`acfun`（AcFun）、`zhihu`（知乎）、`weishi`（微视）、`huya`（虎牙）、`haokan`（好看视频）、`meipai`（美拍）、`twitter`（Twitter/X）、`instagram`（Instagram）、`doubao`（豆包） |
-| `customApis` | array | [] | 自定义平台专属 API 列表。每项包含：`platform`（平台类型）、`apiUrl`（API 地址）。可覆盖内置默认专属 API |
+| `customApis` | array | [] | 自定义平台专属 API 列表。每项包含：`platform`（平台类型）、`provider`（接口协议，可选 `bugpk` / `istero` / `custom`）、`apiUrl`（API 地址）、`token`（专属 Token）、`appSecret`（专属开发者密钥）、`enableSign`（是否开启动态签名）。可覆盖内置默认专属 API |
+
+#### 起零数据 (Istero) 接入示例
+以针对抖音单独接入起零数据为例，在 `customApis` 中添加：
+```json
+{
+  "platform": "douyin",
+  "provider": "istero",
+  "apiUrl": "https://api.istero.com/resource/v2/video/analysis",
+  "token": "YOUR_ISTERO_API_TOKEN",
+  "appSecret": "YOUR_APP_SECRET"
+}
+```
+并在 `platformDedicatedFirst` 中将 `douyin` 设为 `true` 即可优先调用起零接口。插件会自动构造 `Authorization: Bearer <token>` 及 `X-Signature`（SHA256 动态签名）、`X-Timestamp`、`X-Nonce` 等 Header。
 
 ### 错误与重试设置
 | 配置项 | 类型 | 默认值 | 说明 |
