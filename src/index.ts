@@ -4,6 +4,7 @@ import fs from 'fs/promises'
 import path from 'path'
 import { createWriteStream } from 'fs'
 import { pipeline } from 'stream/promises'
+import crypto from 'crypto'
 const LruCacheModule = require('lru-cache')
 const LRUCache = LruCacheModule.LRUCache || LruCacheModule
 
@@ -19,7 +20,7 @@ export const Config = Schema.intersect([
 
   Schema.object({
     unifiedMessageFormat: Schema.string().role('textarea').default(
-      `标题：${'标题'}\n作者：${'作者'}\n简介：${'简介'}\n点赞：${'点赞数'}\n收藏：${'收藏数'}\n转发：${'转发数'}\n播放：${'播放数'}\n评论：${'评论数'}\n图片数量：${'图片数量'}`
+      `标题：\${'标题'}\n作者：\${'作者'}\n简介：\${'简介'}\n点赞：\${'点赞数'}\n收藏：\${'收藏数'}\n转发：\${'转发数'}\n播放：\${'播放数'}\n评论：\${'评论数'}\n图片数量：\${'图片数量'}`
     ).description('统一消息格式，可用变量：${标题} ${作者} ${简介} ${点赞数} ${收藏数} ${转发数} ${播放数} ${评论数} ${视频时长} ${发布时间} ${图片数量} ${作者ID} ${封面}'),
   }).description('消息格式设置'),
 
@@ -33,6 +34,33 @@ export const Config = Schema.intersect([
     maxVideoSize: Schema.number().min(0).step(1).default(0).description('最大下载视频大小（MB），0 为不限制大小'),
     forceDownloadVideo: Schema.boolean().default(false).description('强制下载视频后发送'),
   }).description('内容显示设置'),
+
+  Schema.object({
+    platformEnable: Schema.object({
+      bilibili: Schema.boolean().default(true).description('哔哩哔哩 (B站)'),
+      douyin: Schema.boolean().default(true).description('抖音'),
+      kuaishou: Schema.boolean().default(true).description('快手'),
+      xiaohongshu: Schema.boolean().default(true).description('小红书'),
+      weibo: Schema.boolean().default(true).description('微博'),
+      xigua: Schema.boolean().default(true).description('西瓜视频'),
+      toutiao: Schema.boolean().default(true).description('今日头条'),
+      youtube: Schema.boolean().default(true).description('YouTube'),
+      tiktok: Schema.boolean().default(true).description('TikTok'),
+      acfun: Schema.boolean().default(true).description('AcFun'),
+      zhihu: Schema.boolean().default(true).description('知乎'),
+      weishi: Schema.boolean().default(true).description('微视'),
+      huya: Schema.boolean().default(true).description('虎牙'),
+      haokan: Schema.boolean().default(true).description('好看视频'),
+      meipai: Schema.boolean().default(true).description('美拍'),
+      twitter: Schema.boolean().default(true).description('Twitter/X'),
+      instagram: Schema.boolean().default(true).description('Instagram'),
+      doubao: Schema.boolean().default(true).description('豆包'),
+      pipigx: Schema.boolean().default(true).description('皮皮搞笑'),
+      pipixia: Schema.boolean().default(true).description('皮皮虾'),
+      zuiyou: Schema.boolean().default(true).description('最右'),
+      jimeng: Schema.boolean().default(true).description('即梦/剪映'),
+    }).description('平台独立开关：可独立开启或关闭特定平台的解析'),
+  }).description('平台开关设置'),
 
   Schema.object({
     timeout: Schema.number().min(0).step(1).default(180000).description('API 请求超时（毫秒）'),
@@ -57,6 +85,9 @@ export const Config = Schema.intersect([
   Schema.object({
     primaryApiUrl: Schema.string().default('https://api.bugpk.com/api/short_videos').description('主 API 地址'),
     backupApiUrl: Schema.string().default('https://api.bugpk.com/api/svparse').description('备用主 API 地址（仅支持抖音/小红书/ins/即梦）'),
+    isteroToken: Schema.string().role('secret').description('全局起零数据 (Istero) API Token (选填，自定义平台未单独设置时复用)'),
+    isteroAppSecret: Schema.string().role('secret').description('全局起零数据开发者密钥 AppSecret (选填，用于动态签名防护)'),
+    isteroSignEnabled: Schema.boolean().default(false).description('全局起零数据是否默认开启动态签名防护'),
     platformDedicatedFirst: Schema.object({
       bilibili: Schema.boolean().default(false).description('哔哩哔哩'),
       douyin: Schema.boolean().default(false).description('抖音'),
@@ -64,6 +95,7 @@ export const Config = Schema.intersect([
       xiaohongshu: Schema.boolean().default(false).description('小红书'),
       weibo: Schema.boolean().default(false).description('微博'),
       xigua: Schema.boolean().default(false).description('西瓜视频'),
+      toutiao: Schema.boolean().default(false).description('今日头条'),
       youtube: Schema.boolean().default(false).description('YouTube'),
       tiktok: Schema.boolean().default(false).description('TikTok'),
       acfun: Schema.boolean().default(false).description('AcFun'),
@@ -75,6 +107,10 @@ export const Config = Schema.intersect([
       twitter: Schema.boolean().default(false).description('Twitter/X'),
       instagram: Schema.boolean().default(false).description('Instagram'),
       doubao: Schema.boolean().default(false).description('豆包'),
+      pipigx: Schema.boolean().default(false).description('皮皮搞笑'),
+      pipixia: Schema.boolean().default(false).description('皮皮虾'),
+      zuiyou: Schema.boolean().default(false).description('最右'),
+      jimeng: Schema.boolean().default(false).description('即梦/剪映'),
     }).description('各平台独立开关：是否优先使用专属 API'),
     customApis: Schema.array(
       Schema.object({
@@ -85,6 +121,7 @@ export const Config = Schema.intersect([
           Schema.const('xiaohongshu').description('小红书'),
           Schema.const('weibo').description('微博'),
           Schema.const('xigua').description('西瓜视频'),
+          Schema.const('toutiao').description('今日头条'),
           Schema.const('youtube').description('YouTube'),
           Schema.const('tiktok').description('TikTok'),
           Schema.const('acfun').description('AcFun'),
@@ -96,10 +133,22 @@ export const Config = Schema.intersect([
           Schema.const('twitter').description('Twitter/X'),
           Schema.const('instagram').description('Instagram'),
           Schema.const('doubao').description('豆包'),
+          Schema.const('pipigx').description('皮皮搞笑'),
+          Schema.const('pipixia').description('皮皮虾'),
+          Schema.const('zuiyou').description('最右'),
+          Schema.const('jimeng').description('即梦/剪映'),
         ]).description('选择平台'),
-        apiUrl: Schema.string().description('API 地址'),
+        provider: Schema.union([
+          Schema.const('bugpk').description('BugPk 协议 (默认)'),
+          Schema.const('istero').description('起零数据 (Istero) 协议'),
+          Schema.const('custom').description('通用自定义协议 (无额外鉴权)'),
+        ]).default('bugpk').description('接口协议类型'),
+        apiUrl: Schema.string().description('API 地址 (例如 https://api.istero.com/resource/v2/video/analysis)'),
+        token: Schema.string().role('secret').description('API Token (选填，起零协议下留空将继承全局起零 Token)'),
+        appSecret: Schema.string().role('secret').description('开发者密钥 AppSecret (选填，用于动态签名)'),
+        enableSign: Schema.boolean().description('是否开启动态签名防护 (选填，填写了 AppSecret 默认开启)'),
       })
-    ).default([]).description('自定义平台专属 API 地址，留空则使用内置默认专属 API'),
+    ).default([]).description('自定义平台专属 API 地址与接入方式'),
   }).description('API 选择设置'),
 
   Schema.object({
@@ -140,6 +189,15 @@ interface ParsedData {
   publishTime: number
 }
 
+interface ApiTarget {
+  url: string
+  label: string
+  provider: 'bugpk' | 'istero' | 'custom'
+  token?: string
+  appSecret?: string
+  enableSign?: boolean
+}
+
 const logger = new Logger(name)
 let debugEnabled = false
 
@@ -159,7 +217,7 @@ function debugLog(level: string, ...args: any[]) {
   logger.info(message)
 }
 
-interface LinkMatch {
+export interface LinkMatch {
   type: string
   url: string
   id: string
@@ -171,7 +229,27 @@ const urlCache = new LRUCache({
   updateAgeOnGet: false,
 })
 
-function linkTypeParser(content: string): LinkMatch[] {
+export function generateIsteroSignature(
+  token: string,
+  appSecret: string,
+  timestamp: number,
+  nonce: string,
+  params: Record<string, any> = {}
+): string {
+  const filteredKeys = Object.keys(params)
+    .filter(k => !['sign', 'token', 'timestamp', 'nonce'].includes(k.toLowerCase()))
+    .filter(k => params[k] !== undefined && params[k] !== null && params[k] !== '')
+    .sort()
+
+  const paramString = filteredKeys
+    .map(k => `${k}=${params[k]}`)
+    .join('&')
+
+  const rawString = `${token}${appSecret}${timestamp}${nonce}${paramString}`
+  return crypto.createHash('sha256').update(rawString, 'utf8').digest('hex').toLowerCase()
+}
+
+export function linkTypeParser(content: string): LinkMatch[] {
   content = content.replace(/\\\//g, '/')
   const rules: { pattern: RegExp; type: string }[] = [
     { pattern: /https?:\/\/(?:www\.)?bilibili\.com\/video\/([ab]v[0-9a-zA-Z_-]+)/gi, type: 'bilibili' },
@@ -186,6 +264,8 @@ function linkTypeParser(content: string): LinkMatch[] {
     { pattern: /https?:\/\/weibo\.com\/\d+\/[0-9a-zA-Z_-]{10,}/gi, type: 'weibo' },
     { pattern: /https?:\/\/video\.weibo\.com\/show\?fid=[0-9a-zA-Z_-]{10,}/gi, type: 'weibo' },
     { pattern: /https?:\/\/(?:www\.)?ixigua\.com\/\d{10,}/gi, type: 'xigua' },
+    { pattern: /https?:\/\/(?:www\.)?toutiao\.com\/video\/\d{10,}/gi, type: 'toutiao' },
+    { pattern: /https?:\/\/m\.toutiao\.com\/[0-9a-zA-Z_-]+/gi, type: 'toutiao' },
     { pattern: /https?:\/\/(?:www\.)?youtube\.com\/watch\?v=[a-zA-Z0-9_-]{11}/gi, type: 'youtube' },
     { pattern: /https?:\/\/youtu\.be\/[a-zA-Z0-9_-]{11}/gi, type: 'youtube' },
     { pattern: /https?:\/\/(?:www\.)?tiktok\.com\/@[\w.]+\/video\/\d{10,}/gi, type: 'tiktok' },
@@ -200,6 +280,11 @@ function linkTypeParser(content: string): LinkMatch[] {
     { pattern: /https?:\/\/x\.com\/\w+\/status\/\d{10,}/gi, type: 'twitter' },
     { pattern: /https?:\/\/(?:www\.)?instagram\.com\/p\/[0-9a-zA-Z_-]{10,}/gi, type: 'instagram' },
     { pattern: /https?:\/\/(?:www\.)?doubao\.com\/video\/\d{10,}/gi, type: 'doubao' },
+    { pattern: /https?:\/\/(?:h5\.)?pipigx\.com\/[0-9a-zA-Z_-]+/gi, type: 'pipigx' },
+    { pattern: /https?:\/\/(?:h5\.)?pipix\.com\/[0-9a-zA-Z_-]+/gi, type: 'pipixia' },
+    { pattern: /https?:\/\/(?:h5\.)?xiaochuankeji\.cn\/[0-9a-zA-Z_-]+/gi, type: 'zuiyou' },
+    { pattern: /https?:\/\/(?:www\.)?jianying\.com\/[0-9a-zA-Z_-]+/gi, type: 'jimeng' },
+    { pattern: /https?:\/\/jimeng\.jianying\.com\/[0-9a-zA-Z_-]+/gi, type: 'jimeng' },
   ]
 
   const matches: LinkMatch[] = []
@@ -318,14 +403,14 @@ function pickBestQuality(videoBackup: any[]): VideoQuality[] {
     .sort((a, b) => b.bit_rate - a.bit_rate)
 }
 
-function parseApiResponse(raw: any, maxDescLen: number): ParsedData {
+export function parseApiResponse(raw: any, maxDescLen: number): ParsedData {
   debugLog('DEBUG', '原始API返回数据:', raw)
   const data = raw?.data || {}
   const extra = data.extra || {}
 
   let type = data.type || ''
   if (!type) {
-    if (data.images?.length > 0 && !data.url) type = 'image'
+    if (data.images?.length > 0 && !data.url && !data.video && !data.video_url) type = 'image'
     else if (data.live_photo?.length > 0) type = 'live_photo'
     else if (raw.msg === 'live' || data.live) type = 'live'
     else type = 'video'
@@ -334,18 +419,18 @@ function parseApiResponse(raw: any, maxDescLen: number): ParsedData {
   const authorObj = data.author
   let author = '', uid = '', avatar = ''
   if (authorObj && typeof authorObj === 'object') {
-    author = authorObj.name || authorObj.author || ''
+    author = authorObj.name || authorObj.author || authorObj.nickname || ''
     uid = String(authorObj.id || data.uid || '')
     avatar = authorObj.avatar || data.avatar || ''
   } else {
-    author = data.author || data.auther || ''
+    author = data.author || data.auther || data.author_name || data.nickname || ''
     uid = String(data.uid || '')
     avatar = data.avatar || ''
   }
 
   const title = data.title || ''
-  const desc = (data.desc || data.description || '').slice(0, maxDescLen).trim()
-  const cover = data.cover || ''
+  const desc = (data.desc || data.description || data.content || data.content_text || '').slice(0, maxDescLen).trim()
+  const cover = data.cover || data.cover_url || data.picture || ''
 
   let video = ''
   let videos: VideoQuality[] = []
@@ -369,6 +454,12 @@ function parseApiResponse(raw: any, maxDescLen: number): ParsedData {
 
   if (!video && data.url) {
     video = data.url
+  }
+  if (!video && data.video) {
+    video = data.video
+  }
+  if (!video && data.video_url) {
+    video = data.video_url
   }
 
   if (video && !video.startsWith('http')) {
@@ -427,7 +518,7 @@ function parseApiResponse(raw: any, maxDescLen: number): ParsedData {
   }
 }
 
-function generateFormattedText(p: ParsedData, format: string): string {
+export function generateFormattedText(p: ParsedData, format: string): string {
   const imageCount = p.images.length || p.live_photo.length
   const vars: Record<string, string> = {
     '标题': p.title,
@@ -536,15 +627,30 @@ export function apply(ctx: Context, config: any) {
 
   const backupSupportedPlatforms = new Set(['douyin', 'xiaohongshu', 'instagram', 'jimeng'])
 
-  function getPlatformConfig(type: string): { apiUrl: string | null, dedicatedFirst: boolean } {
+  function getPlatformConfig(type: string): { customTarget: ApiTarget | null, dedicatedUrl: string | null, dedicatedFirst: boolean } {
     const custom = config.customApis?.find((item: any) => item.platform === type)
-    let apiUrl = defaultDedicatedApis[type] || null
+    let customTarget: ApiTarget | null = null
+
     if (custom && custom.apiUrl) {
-      apiUrl = custom.apiUrl
+      let provider: 'bugpk' | 'istero' | 'custom' = custom.provider || 'bugpk'
+      if (!custom.provider && custom.apiUrl.includes('istero.com')) {
+        provider = 'istero'
+      }
+      const token = custom.token || config.isteroToken
+      const appSecret = custom.appSecret || config.isteroAppSecret
+      customTarget = {
+        url: custom.apiUrl,
+        label: `专属API(${type})[${provider}]`,
+        provider,
+        token,
+        appSecret,
+        enableSign: custom.enableSign ?? (Boolean(appSecret && token) || (provider === 'istero' && config.isteroSignEnabled)),
+      }
     }
 
+    const defaultUrl = defaultDedicatedApis[type] || null
     const dedicatedFirst = config.platformDedicatedFirst?.[type] ?? false
-    return { apiUrl, dedicatedFirst }
+    return { customTarget, dedicatedUrl: defaultUrl, dedicatedFirst }
   }
 
   async function resolveShortUrl(url: string): Promise<string> {
@@ -566,7 +672,7 @@ export function apply(ctx: Context, config: any) {
     }
   }
 
-    async function downloadVideoFile(videoUrl: string): Promise<string> {
+  async function downloadVideoFile(videoUrl: string): Promise<string> {
     if (!videoUrl) throw new Error('视频链接为空')
 
     const tempDir = config.tempDir || './temp_videos'
@@ -643,21 +749,45 @@ export function apply(ctx: Context, config: any) {
       return cached.data
     }
 
-    const { apiUrl: dedicatedUrl, dedicatedFirst } = getPlatformConfig(type)
+    const { customTarget, dedicatedUrl, dedicatedFirst } = getPlatformConfig(type)
     const primaryApi = config.primaryApiUrl || 'https://api.bugpk.com/api/short_videos'
     const backupApi = config.backupApiUrl || 'https://api.bugpk.com/api/svparse'
     const backupAllowed = backupSupportedPlatforms.has(type)
 
-    const apiList: Array<{ url: string; label: string }> = []
+    const primaryTarget: ApiTarget = {
+      url: primaryApi,
+      label: '默认主API',
+      provider: primaryApi.includes('istero.com') ? 'istero' : 'bugpk',
+      token: config.isteroToken,
+      appSecret: config.isteroAppSecret,
+      enableSign: config.isteroSignEnabled,
+    }
 
-    if (dedicatedFirst && dedicatedUrl) {
-      apiList.push({ url: dedicatedUrl, label: `专属API(${type})` })
-      apiList.push({ url: primaryApi, label: '默认主API' })
-      if (backupAllowed) apiList.push({ url: backupApi, label: '备用主API' })
+    const backupTarget: ApiTarget = {
+      url: backupApi,
+      label: '备用主API',
+      provider: backupApi.includes('istero.com') ? 'istero' : 'bugpk',
+      token: config.isteroToken,
+      appSecret: config.isteroAppSecret,
+      enableSign: config.isteroSignEnabled,
+    }
+
+    const dedicatedTarget: ApiTarget | null = customTarget || (dedicatedUrl ? {
+      url: dedicatedUrl,
+      label: `内置专属API(${type})`,
+      provider: 'bugpk'
+    } : null)
+
+    const apiList: ApiTarget[] = []
+
+    if (dedicatedFirst && dedicatedTarget) {
+      apiList.push(dedicatedTarget)
+      apiList.push(primaryTarget)
+      if (backupAllowed) apiList.push(backupTarget)
     } else {
-      apiList.push({ url: primaryApi, label: '默认主API' })
-      if (backupAllowed) apiList.push({ url: backupApi, label: '备用主API' })
-      if (dedicatedUrl) apiList.push({ url: dedicatedUrl, label: `专属API(${type})` })
+      apiList.push(primaryTarget)
+      if (backupAllowed) apiList.push(backupTarget)
+      if (dedicatedTarget) apiList.push(dedicatedTarget)
     }
 
     let lastError: Error | null = null
@@ -665,19 +795,56 @@ export function apply(ctx: Context, config: any) {
     for (const api of apiList) {
       for (let attempt = 0; attempt <= config.retryTimes; attempt++) {
         try {
+          const reqHeaders: Record<string, string> = {
+            'User-Agent': config.userAgent,
+          }
+          const queryParams: Record<string, any> = { url }
+
+          if (api.provider === 'istero') {
+            const token = api.token || config.isteroToken || ''
+            const appSecret = api.appSecret || config.isteroAppSecret || ''
+            const enableSign = api.enableSign ?? (Boolean(appSecret && token) || config.isteroSignEnabled)
+
+            if (token) {
+              reqHeaders['Authorization'] = `Bearer ${token}`
+            }
+
+            if (enableSign && token && appSecret) {
+              const timestamp = Math.floor(Date.now() / 1000)
+              const nonce = crypto.randomBytes(8).toString('hex')
+              const sign = generateIsteroSignature(token, appSecret, timestamp, nonce, queryParams)
+
+              reqHeaders['X-Signature'] = sign
+              reqHeaders['X-Timestamp'] = String(timestamp)
+              reqHeaders['X-Nonce'] = nonce
+            }
+          } else {
+            reqHeaders['Referer'] = 'https://www.baidu.com/'
+          }
+
+          debugLog('DEBUG', `发送请求 [${api.label}]: ${api.url}`, '参数:', queryParams, 'Headers:', {
+            ...reqHeaders,
+            Authorization: reqHeaders.Authorization ? reqHeaders.Authorization.substring(0, 15) + '...' : undefined,
+            'X-Signature': reqHeaders['X-Signature'] ? reqHeaders['X-Signature'].substring(0, 10) + '...' : undefined,
+          })
+
           const res = await http.get(api.url, {
-            params: { url },
+            params: queryParams,
+            headers: reqHeaders,
             timeout: config.timeout
           })
+
           if (res.data && (res.data.code === 200 || res.data.code === 0)) {
             const parsed = parseApiResponse(res.data, config.maxDescLength)
             urlCache.set(cacheKey, { data: parsed, expire: Date.now() + 10 * 60 * 1000 })
             return parsed
           }
-          throw new Error(res.data?.msg || `API返回错误码: ${res.data?.code}`)
+
+          const errorMsg = res.data?.message || res.data?.msg || `API返回错误码: ${res.data?.code}`
+          throw new Error(errorMsg)
         } catch (error) {
           lastError = error instanceof Error ? error : new Error(String(error))
-          debugLog('ERROR', `${api.label} 第${attempt+1}次请求失败: ${lastError.message}`)
+          debugLog('ERROR', `${api.label} 第${attempt + 1}次请求失败: ${lastError.message}`)
           if (attempt < config.retryTimes) {
             await delay(config.retryInterval)
           }
@@ -981,7 +1148,18 @@ export function apply(ctx: Context, config: any) {
     const matches = extractAllUrlsFromMessage(session)
     if (!matches.length) return
 
-    debugLog('INFO', `检测到 ${matches.length} 个链接，开始处理`)
+    // 过滤已禁用的平台
+    const activeMatches = matches.filter(match => {
+      const isEnabled = config.platformEnable?.[match.type] !== false
+      if (!isEnabled) {
+        debugLog('INFO', `平台 ${match.type} 已在设置中禁用，跳过链接: ${match.url}`)
+      }
+      return isEnabled
+    })
+
+    if (!activeMatches.length) return
+
+    debugLog('INFO', `检测到 ${activeMatches.length} 个启用平台的链接，开始处理`)
 
     if (config.showWaitingTip) {
       try {
@@ -991,7 +1169,7 @@ export function apply(ctx: Context, config: any) {
       }
     }
 
-    await flush(session, matches)
+    await flush(session, activeMatches)
   })
 
   ctx.command('parse <url>', '手动解析视频').action(async ({ session }, url) => {
@@ -1006,13 +1184,23 @@ export function apply(ctx: Context, config: any) {
       return
     }
 
+    const activeMatches = matches.filter(match => {
+      const isEnabled = config.platformEnable?.[match.type] !== false
+      return isEnabled
+    })
+
+    if (!activeMatches.length) {
+      await sendWithTimeout(session, `该平台链接已在配置中禁用解析。`)
+      return
+    }
+
     if (config.showWaitingTip) {
       try {
         await sendWithTimeout(session, texts.waitingTipText)
       } catch {}
     }
 
-    await flush(session, matches)
+    await flush(session, activeMatches)
   })
 
   const tempCleanupInterval = setInterval(async () => {
